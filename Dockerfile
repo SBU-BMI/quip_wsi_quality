@@ -11,6 +11,7 @@ RUN git clone https://github.com/choosehappy/HistoQC.git && \
     pip3 install -r requirements.txt
 
 WORKDIR /opt/HistoQC/
-
-ENTRYPOINT ["python","qc_pipeline.py"]
+COPY run_quality .
+RUN  chmod 0755 run_quality
+ENV  PATH=$PATH:/opt/HistoQC
 

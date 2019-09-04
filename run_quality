@@ -1,0 +1,5 @@
+#!/bin/sh 
+
+echo $@
+
+python qc_pipeline.py -s -o /data/output -p /data/images -c config_first.ini $@
