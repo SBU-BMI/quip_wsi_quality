@@ -1,2 +1,2 @@
 # quip_wsi_quality
-WSI Quality control using HistoQC
+Docker image for WSI quality control using HistoQC
