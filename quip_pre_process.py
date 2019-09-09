@@ -1,5 +1,12 @@
 import sys
 import pandas as pd
+import argparse
+
+parser = argparse.ArgumentParser(description="Convert WSI images to multires, tiff images.")
+parser.add_argument("--inpmeta",nargs="?",default="quip_manifest.csv",type=str,help="input manifest (metadata) file.")
+parser.add_argument("--errfile",nargs="?",default="quip_wsi_error_log.json",type=str,help="error log file.")
+parser.add_argument("--inpdir",nargs="?",default="/data/images",type=str,help="input folder.")
+parser.add_argument("--outdir",nargs="?",default="/data/output",type=str,help="output folder.")
 
 def main(argv):
     inp_folder = "/data/images/"
