@@ -1,14 +1,4 @@
 #!/bin/sh 
 
-manifest_csv=$1
-images_tsv=$2
-results_tsv=$3
-config_file=$4
+python quip_wsi_quality.py $@
 
-img_folder=/data/images
-out_folder=/data/output
-log_file=$out_folder/output.log
-
-python quip_pre_process.py  $manifest_csv $images_tsv >> $log_file 2>&1
-python qc_pipeline.py -s --force -o $out_folder -p $img_folder -c $config_file $out_folder/$images_tsv >> $log_file 2>&1
-python quip_post_process.py $manifest_csv $results_tsv >> $log_file 2>&1

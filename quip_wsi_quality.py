@@ -4,6 +4,15 @@ import argparse
 import uuid
 import subprocess
 
+error_info = {}
+error_info["no_error"] = { "code":"0", "msg":"no-error" }
+error_info["missing_file"] = { "code":"401", "msg":"input-file-missing" }
+error_info["file_format"] = { "code":"402", "msg":"file-format-error" }
+error_info["missing_columns"] = { "code":"403", "msg":"missing-columns" }
+error_info["showinf_failed"] = { "code":"404", "msg":"showinf-failed" }
+error_info["fconvert_failed"] = { "code":"405", "msg":"fconvert-failed" }
+error_info["vips_failed"] = { "code":"406", "msg":"vips-failed" }
+
 parser = argparse.ArgumentParser(description="Convert WSI images to multires, tiff images.")
 parser.add_argument("--inpmeta",nargs="?",default="quip_manifest.csv",type=str,help="input manifest (metadata) file.")
 parser.add_argument("--outmeta",nargs="?",default="quip_manifest.csv",type=str,help="output manifest (metadata) file.")
@@ -31,9 +40,8 @@ def main(args):
     try:
         inp_metadata_fd = open(inp_folder + "/" + inp_manifest_fname);
     except OSError:
-        ierr = {}
-        ierr["error_code"] = 1
-        ierr["error_msg"] = "missing manifest file: " + str(inp_manifest_fname);
+        ierr = error_info["missing_file"]
+        ierr["msg"] = ierr["msg"]+": " + str(inp_manifest_fname);
         all_log["error"].append(ierr)
         json.dump(all_log,out_error_fd)
         out_error_fd.close()
@@ -41,9 +49,8 @@ def main(args):
 
     pf = pd.read_csv(inp_metadata_fd,sep=',')
     if "path" not in pf.columns:
-        ierr = {}
-        ierr["error_code"] = 2
-        ierr["error_msg"] = "column path is missing."
+        ierr = error_info["missing_columns"]
+        ierr["msg"] = ierr["msg"]+ ": "+ "path."
         all_log["error"].append(ierr)
         json.dump(all_log,out_error_fd)
         out_error_fd.close()
@@ -51,25 +58,33 @@ def main(args):
         sys.exit(1)
 
     if "file_uuid" not in pf.columns:
-        iwarn = {}
-        iwarn["warning_code"] = 1
-        iwarn["warning_msg"] = "column file_uuid is missing. Will generate."
+        iwarn = error_info["missing_columns"]
+        iwarn["msg"] = iwarn["msg"]+": "+"file_uuid. Will generate."
         all_log["warning"].append(iwarn)
         fp["file_uuid"] = "" 
         for idx, row in pf.iterrows(): 
             filename, file_extension = path.splitext(row["path"]) 
             pf.at[idx,"file_uuid"] = str(uuid.uuid1()) + file_extension
-
-    if "row_status" not in pf.columns:
-        iwarn = {}
-        iwarn["warning_code"] = 3
-        iwarn["warning_msg"] = "column row_status is missing. Will generate."
+            
+    if "error_code" not in pf.columns:
+        iwarn = error_info["missing_columns"]
+        iwarn["msg"] = iwarn["msg"]+": "+"error_code. Will generate."
         all_log["warning"].append(iwarn)
-        fp["row_status"] = "ok"
+        fp["error_code"] = error_info["no_error"]["code"] 
+
+    if "error_msg" not in pf.columns:
+        iwarn = error_info["missing_columns"]
+        iwarn["msg"] = iwarn["msg"]+": "+"error_msg. Will generate."
+        all_log["warning"].append(iwarn)
+        fp["error_msg"] = error_info["no_error"]["msg"] 
 
     # Pre-processing: create input manifest file for HistoQC
+    folder_uuid = out_folder + "/" + "images-" + str(uuid.uuid1());  
+    os.makedirs(folder_uuid);
     images_tmp_fd  = open(out_folder + "/" + images_tmp_fname,"w");
-    pf["path"].to_csv(images_tmp_fd,index=False,header=False);
+    for idx, row in pf.iterrows():
+        os.symlink(inp_folder+"/"+row["path"],folder_uuid+"/"+row["file_uuid"])
+        images_tmp_fd.write(folder_uuid+"/"+row["file_uuid"]);
     images_tmp_fd.close()
 
     # Execute HistoQC process
@@ -84,11 +99,10 @@ def main(args):
     process.wait()
     if process.returncode != 0:
         ierr = {}
-        ierr["error_code"] = process.returncode
-        ierr["error_msg"] = "HistoQC error."
+        ierr["code"] = str(process.returncode)
+        ierr["msg"]  = "HistoQC error."
         all_log["error"].append(ierr)
  
-
     # Post-process: 
     histoqc_results_fd = open(out_folder + "/" + histoqc_results_fname);
     dst = 0
@@ -107,10 +121,11 @@ def main(args):
            pt = pd.DataFrame([a.split("\t")],columns=c_result)
            pf_result = pf_result.append(pt,ignore_index=True)
 
-    pf_output = pd.merge(pf_manifest,pf_result,how='inner', left_on=['path'], right_on=['filename'])
+    pf_output = pd.merge(pf_manifest,pf_result,how='inner', left_on=['file_uuid'], right_on=['filename'])
     out_csv  = open(out_folder + "/" + out_manifest,"w");
     pf_output.to_csv(out_csv,index=False)
 
-if __name__ == "__main__":
-   main(sys.argv[1:])
+if __name__ == "__main__": 
+    args = parser.parse_args(sys.argv[1:]); 
+    main(args)
 
