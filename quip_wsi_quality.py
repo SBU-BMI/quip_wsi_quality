@@ -7,13 +7,13 @@ import subprocess
 import os
 
 error_info = {}
-error_info["no_error"] = { "code":"0", "msg":"no-error" }
-error_info["missing_file"] = { "code":"401", "msg":"input-file-missing" }
-error_info["file_format"] = { "code":"402", "msg":"file-format-error" }
-error_info["missing_columns"] = { "code":"403", "msg":"missing-columns" }
-error_info["showinf_failed"] = { "code":"404", "msg":"showinf-failed" }
-error_info["fconvert_failed"] = { "code":"405", "msg":"fconvert-failed" }
-error_info["vips_failed"] = { "code":"406", "msg":"vips-failed" }
+error_info["no_error"] = { "code":0, "msg":"no-error" }
+error_info["missing_file"] = { "code":401, "msg":"input-file-missing" }
+error_info["file_format"] = { "code":402, "msg":"file-format-error" }
+error_info["missing_columns"] = { "code":403, "msg":"missing-columns" }
+error_info["showinf_failed"] = { "code":404, "msg":"showinf-failed" }
+error_info["fconvert_failed"] = { "code":405, "msg":"fconvert-failed" }
+error_info["vips_failed"] = { "code":406, "msg":"vips-failed" }
 
 parser = argparse.ArgumentParser(description="Convert WSI images to multires, tiff images.")
 parser.add_argument("--inpmeta",nargs="?",default="quip_manifest.csv",type=str,help="input manifest (metadata) file.")
@@ -72,7 +72,7 @@ def main(args):
         iwarn = error_info["missing_columns"]
         iwarn["msg"] = iwarn["msg"]+": "+"error_code. Will generate."
         all_log["warning"].append(iwarn)
-        fp["error_code"] = error_info["no_error"]["code"] 
+        fp["error_code"] = str(error_info["no_error"]["code"])
 
     if "error_msg" not in pf.columns:
         iwarn = error_info["missing_columns"]
