@@ -1,8 +1,10 @@
 import sys
+import json
 import pandas as pd
 import argparse
 import uuid
 import subprocess
+import os
 
 error_info = {}
 error_info["no_error"] = { "code":"0", "msg":"no-error" }
@@ -84,17 +86,18 @@ def main(args):
     images_tmp_fd  = open(out_folder + "/" + images_tmp_fname,"w");
     for idx, row in pf.iterrows():
         os.symlink(inp_folder+"/"+row["path"],folder_uuid+"/"+row["file_uuid"])
-        images_tmp_fd.write(folder_uuid+"/"+row["file_uuid"]);
+        images_tmp_fd.write(row["file_uuid"]+"\n");
     images_tmp_fd.close()
 
     # Execute HistoQC process
     histoqc_log_fname = str(uuid.uuid1())+"-histoqc.log"
-    cmd = "python qc_pipeline.py -s --force"
-    cmd = cmd + "-o " + out_folder 
-    cmd = cmd + "-p " + inp_folder 
-    cmd = cmd + "-c " + histoqc_config_fname 
-    cmd = cmd + out_folder + "/" + images_tmp_fname 
-    cmd = cmd + ">" + histoqc_log_fname + "2>&1"
+    cmd = "python qc_pipeline.py -s --force "
+    cmd = cmd + "-o " + out_folder + " "
+    cmd = cmd + "-p " + folder_uuid + " "
+    cmd = cmd + "-c " + histoqc_config_fname + " "
+    cmd = cmd + out_folder + "/" + images_tmp_fname + " "
+    cmd = cmd + "> " + histoqc_log_fname + " 2>&1"
+
     process = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE)
     process.wait()
     if process.returncode != 0:
@@ -102,7 +105,7 @@ def main(args):
         ierr["code"] = str(process.returncode)
         ierr["msg"]  = "HistoQC error."
         all_log["error"].append(ierr)
- 
+
     # Post-process: 
     histoqc_results_fd = open(out_folder + "/" + histoqc_results_fname);
     dst = 0
@@ -121,9 +124,16 @@ def main(args):
            pt = pd.DataFrame([a.split("\t")],columns=c_result)
            pf_result = pf_result.append(pt,ignore_index=True)
 
-    pf_output = pd.merge(pf_manifest,pf_result,how='inner', left_on=['file_uuid'], right_on=['filename'])
-    out_csv  = open(out_folder + "/" + out_manifest,"w");
-    pf_output.to_csv(out_csv,index=False)
+    pf_output = pd.merge(pf,pf_result,how='inner', left_on=['file_uuid'], right_on=['filename'])
+    out_metadata_fd  = open(out_folder + "/" + out_manifest_fname,"w");
+    pf_output.to_csv(out_metadata_fd,index=False)
+
+    json.dump(all_log,out_error_fd)
+
+    out_error_fd.close()
+    inp_metadata_fd.close()
+    out_metadata_fd.close()
+    histoqc_results_fd.close()
 
 if __name__ == "__main__": 
     args = parser.parse_args(sys.argv[1:]); 
