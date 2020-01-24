@@ -14,6 +14,7 @@ error_info["missing_columns"] = { "code":403, "msg":"missing-columns" }
 error_info["showinf_failed"] = { "code":404, "msg":"showinf-failed" }
 error_info["fconvert_failed"] = { "code":405, "msg":"fconvert-failed" }
 error_info["vips_failed"] = { "code":406, "msg":"vips-failed" }
+error_info["manifest_errors"] = { "code":407, "msg":"manifest-errors" }
 
 parser = argparse.ArgumentParser(description="Convert WSI images to multires, tiff images.")
 parser.add_argument("--inpmeta",nargs="?",default="quip_manifest.csv",type=str,help="input manifest (metadata) file.")
@@ -22,6 +23,34 @@ parser.add_argument("--errfile",nargs="?",default="quip_wsi_error_log.json",type
 parser.add_argument("--cfgfile",nargs="?",default="config_first.ini",type=str,help="HistoQC config file.")
 parser.add_argument("--inpdir",nargs="?",default="/data/images",type=str,help="input folder.")
 parser.add_argument("--outdir",nargs="?",default="/data/output",type=str,help="output folder.")
+
+def check_input_errors(pf,all_log):
+    ret_val = 0;
+    if "path" not in pf.columns:
+        ierr = error_info["missing_columns"]
+        ierr["msg"] = ierr["msg"]+": "+"path"
+        all_log["error"].append(ierr)
+        ret_val = 1
+
+    if "file_uuid" not in pf.columns:
+        ierr = error_info["missing_columns"] 
+        ierr["msg"] = ierr["msg"]+": "+"file_uuid"
+        all_log["error"].append(ierr)
+        ret_val = 1
+            
+    if "manifest_error_code" not in pf.columns:
+        ierr = error_info["missing_columns"] 
+        ierr["msg"] = ierr["msg"]+": "+"manifest_error_code"
+        all_log["error"].append(ierr)
+        ret_val = 1
+
+    if "manifest_error_msg" not in pf.columns:
+        ierr = error_info["missing_columns"] 
+        ierr["msg"] = ierr["msg"]+": "+"manifest_error_msg"
+        all_log["error"].append(ierr)
+        ret_val = 1
+
+    return ret_val
 
 def main(args):
     inp_folder = args.inpdir 
@@ -49,44 +78,21 @@ def main(args):
         out_error_fd.close()
         sys.exit(1)
 
-    pf = pd.read_csv(inp_metadata_fd,sep=',')
-    if "path" not in pf.columns:
-        ierr = error_info["missing_columns"]
-        ierr["msg"] = ierr["msg"]+ ": "+ "path."
-        all_log["error"].append(ierr)
-        json.dump(all_log,out_error_fd)
-        out_error_fd.close()
-        inp_metadata_fd.close() 
-        sys.exit(1)
-
-    if "file_uuid" not in pf.columns:
-        iwarn = error_info["missing_columns"]
-        iwarn["msg"] = iwarn["msg"]+": "+"file_uuid. Will generate."
-        all_log["warning"].append(iwarn)
-        fp["file_uuid"] = "" 
-        for idx, row in pf.iterrows(): 
-            filename, file_extension = path.splitext(row["path"]) 
-            pf.at[idx,"file_uuid"] = str(uuid.uuid1()) + file_extension
-            
-    if "error_code" not in pf.columns:
-        iwarn = error_info["missing_columns"]
-        iwarn["msg"] = iwarn["msg"]+": "+"error_code. Will generate."
-        all_log["warning"].append(iwarn)
-        fp["error_code"] = str(error_info["no_error"]["code"])
-
-    if "error_msg" not in pf.columns:
-        iwarn = error_info["missing_columns"]
-        iwarn["msg"] = iwarn["msg"]+": "+"error_msg. Will generate."
-        all_log["warning"].append(iwarn)
-        fp["error_msg"] = error_info["no_error"]["msg"] 
+    pfinp = pd.read_csv(inp_metadata_fd,sep=',')
+    if check_input_errors(pfinp,all_log) != 0:
+        json.dump(all_log,out_error_fd);
+        out_error_fd.close();
+        inp_metadata_fd.close();
+        sys.exit(1);
 
     # Pre-processing: create input manifest file for HistoQC
     folder_uuid = out_folder + "/" + "images-" + str(uuid.uuid1());  
     os.makedirs(folder_uuid);
     images_tmp_fd  = open(out_folder + "/" + images_tmp_fname,"w");
-    for idx, row in pf.iterrows():
-        os.symlink(inp_folder+"/"+row["path"],folder_uuid+"/"+row["file_uuid"])
-        images_tmp_fd.write(row["file_uuid"]+"\n");
+    for idx, row in pfinp.iterrows():
+        if row["manifest_error_code"]==error_info["no_error"]["code"]:
+            os.symlink(inp_folder+"/"+row["path"],folder_uuid+"/"+row["file_uuid"])
+            images_tmp_fd.write(row["file_uuid"]+"\n");
     images_tmp_fd.close()
 
     # Execute HistoQC process
@@ -105,28 +111,36 @@ def main(args):
         ierr["code"] = str(process.returncode)
         ierr["msg"]  = "HistoQC error."
         all_log["error"].append(ierr)
+        json.dump(all_log,out_error_fd)
+        out_error_fd.close()
+        inp_metadata_fd.close();
+        sys.exit(1);
 
     # Post-process: 
     histoqc_results_fd = open(out_folder + "/" + histoqc_results_fname);
     dst = 0
-    c_result  = None
+    c_result = None
     pf_result = None
     for x in histoqc_results_fd:
-        if dst==0:
+        if dst==0: # header lines
            a = x.split(':')
            if a[0]=='#dataset':
               dst=1
               a[1] = a[1].replace("\n","")
               c_result = a[1].split('\t')
+              c_result.append('file_uuid')
               pf_result = pd.DataFrame(columns=c_result)
-        else:
-           a = x.replace("\n","")
-           pt = pd.DataFrame([a.split("\t")],columns=c_result)
+        else: # read HistoQC output for each image 
+           a  = x.replace("\n","")
+           c_val = a.split("\t");
+           c_val.append('NA');
+           pt = pd.DataFrame([c_val],columns=c_result)
            pf_result = pf_result.append(pt,ignore_index=True)
 
-    pf_output = pd.merge(pf,pf_result,how='inner', left_on=['file_uuid'], right_on=['filename'])
+    pf_result["file_uuid"] = pf_result["filename"]
+
     out_metadata_fd  = open(out_folder + "/" + out_manifest_fname,"w");
-    pf_output.to_csv(out_metadata_fd,index=False)
+    pf_result.to_csv(out_metadata_fd,index=False)
 
     json.dump(all_log,out_error_fd)
 
