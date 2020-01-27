@@ -91,8 +91,8 @@ def main(args):
     images_tmp_fd  = open(out_folder + "/" + images_tmp_fname,"w");
     for idx, row in pfinp.iterrows():
         if row["manifest_error_code"]==error_info["no_error"]["code"]:
-            os.symlink(inp_folder+"/"+row["path"],folder_uuid+"/"+row["file_uuid"])
-            images_tmp_fd.write(row["file_uuid"]+"\n");
+            os.symlink(inp_folder+"/"+row["path"],folder_uuid+"/"+row["file_uuid"]+row["file_ext"])
+            images_tmp_fd.write(row["file_uuid"]+row["file_ext"]+"\n");
     images_tmp_fd.close()
 
     # Execute HistoQC process
@@ -137,7 +137,9 @@ def main(args):
            pt = pd.DataFrame([c_val],columns=c_result)
            pf_result = pf_result.append(pt,ignore_index=True)
 
-    pf_result["file_uuid"] = pf_result["filename"]
+
+    for idx, row in pf_result.iterrows():
+        pf_result.at[idx,"file_uuid"],file_ext = os.path.splitext(str(row["filename"]));
 
     out_metadata_fd  = open(out_folder + "/" + out_manifest_fname,"w");
     pf_result.to_csv(out_metadata_fd,index=False)
