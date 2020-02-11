@@ -23,6 +23,7 @@ parser.add_argument("--errfile",nargs="?",default="quip_wsi_error_log.json",type
 parser.add_argument("--cfgfile",nargs="?",default="config_first.ini",type=str,help="HistoQC config file.")
 parser.add_argument("--inpdir",nargs="?",default="/data/images",type=str,help="input folder.")
 parser.add_argument("--outdir",nargs="?",default="/data/output",type=str,help="output folder.")
+parser.add_argument("--slide",nargs="?",default="",type=str,help="one slide to check.")
 
 def check_input_errors(pf,all_log):
     ret_val = 0;
@@ -35,6 +36,12 @@ def check_input_errors(pf,all_log):
     if "file_uuid" not in pf.columns:
         ierr = error_info["missing_columns"] 
         ierr["msg"] = ierr["msg"]+": "+"file_uuid"
+        all_log["error"].append(ierr)
+        ret_val = 1
+
+    if "file_ext" not in pf.columns:
+        ierr = error_info["missing_columns"] 
+        ierr["msg"] = ierr["msg"]+": "+"file_ext"
         all_log["error"].append(ierr)
         ret_val = 1
             
@@ -52,7 +59,29 @@ def check_input_errors(pf,all_log):
 
     return ret_val
 
-def main(args):
+def check_input_params(pf,all_log):
+    ret_val = 0;
+    if "path" not in pf.columns:
+        ierr = error_info["missing_columns"]
+        ierr["msg"] = ierr["msg"]+": "+"path"
+        all_log["error"].append(ierr)
+        ret_val = 1
+
+    if "file_uuid" not in pf.columns:
+        ierr = error_info["missing_columns"] 
+        ierr["msg"] = ierr["msg"]+": "+"file_uuid"
+        all_log["error"].append(ierr)
+        ret_val = 1
+
+    if "file_ext" not in pf.columns:
+        ierr = error_info["missing_columns"] 
+        ierr["msg"] = ierr["msg"]+": "+"file_ext"
+        all_log["error"].append(ierr)
+        ret_val = 1
+            
+    return ret_val
+
+def process_manifest_file(args):
     inp_folder = args.inpdir 
     out_folder = args.outdir 
     inp_manifest_fname = args.inpmeta
@@ -150,6 +179,105 @@ def main(args):
     inp_metadata_fd.close()
     out_metadata_fd.close()
     histoqc_results_fd.close()
+
+def process_single_slide(args):
+    inp_folder = args.inpdir 
+    out_folder = args.outdir 
+    inp_manifest_fname = args.inpmeta
+    out_manifest_fname = args.outmeta
+    out_error_fname = args.errfile 
+    inp_slide = args.slide
+
+    # HistoQC related files
+    images_tmp_fname  = str(uuid.uuid1())+".tsv"
+    histoqc_results_fname = "results.tsv"
+    histoqc_config_fname = args.cfgfile
+
+    all_log = {}
+    all_log["error"] = []
+    all_log["warning"] = [] 
+    return_msg = {}
+    return_msg["status"] = all_log
+    return_msg["output"] = {}
+
+    inp_json = {} 
+    r_json = json.loads(inp_slide)
+    for item in r_json:
+        inp_json[item] = [r_json[item]]
+    pfinp = pd.DataFrame.from_dict(inp_json)
+    if check_input_params(pfinp,all_log) != 0:
+        return_msg["status"] = all_log
+        print(return_msg)
+        sys.exit(1);
+
+    # Pre-processing: create input manifest file for HistoQC
+    folder_uuid = out_folder + "/" + "images-" + str(uuid.uuid1());  
+    os.makedirs(folder_uuid);
+    images_tmp_fd  = open(out_folder + "/" + images_tmp_fname,"w");
+    for idx, row in pfinp.iterrows():
+        os.symlink(inp_folder+"/"+row["path"],folder_uuid+"/"+row["file_uuid"]+row["file_ext"])
+        images_tmp_fd.write(row["file_uuid"]+row["file_ext"]+"\n");
+    images_tmp_fd.close()
+
+    # Execute HistoQC process
+    histoqc_log_fname = str(uuid.uuid1())+"-histoqc.log"
+    cmd = "python qc_pipeline.py -s --force "
+    cmd = cmd + "-o " + out_folder + " "
+    cmd = cmd + "-p " + folder_uuid + " "
+    cmd = cmd + "-c " + histoqc_config_fname + " "
+    cmd = cmd + out_folder + "/" + images_tmp_fname + " "
+    cmd = cmd + "> " + histoqc_log_fname + " 2>&1"
+
+    process = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE)
+    process.wait()
+    if process.returncode != 0:
+        ierr = {}
+        ierr["code"] = str(process.returncode)
+        ierr["msg"]  = "HistoQC error."
+        all_log["error"].append(ierr)
+        return_msg["status"] = all_log
+        print(return_msg)
+        sys.exit(1);
+
+    # Post-process: 
+    histoqc_results_fd = open(out_folder + "/" + histoqc_results_fname);
+    dst = 0
+    c_result = None
+    pf_result = None
+    for x in histoqc_results_fd:
+        if dst==0: # header lines
+           a = x.split(':')
+           if a[0]=='#dataset':
+              dst=1
+              a[1] = a[1].replace("\n","")
+              c_result = a[1].split('\t')
+              c_result.append('file_uuid')
+              pf_result = pd.DataFrame(columns=c_result)
+        else: # read HistoQC output for each image 
+           a  = x.replace("\n","")
+           c_val = a.split("\t");
+           c_val.append('NA');
+           pt = pd.DataFrame([c_val],columns=c_result)
+           pf_result = pf_result.append(pt,ignore_index=True)
+
+
+    for idx, row in pf_result.iterrows():
+        pf_result.at[idx,"file_uuid"],file_ext = os.path.splitext(str(row["filename"]));
+
+
+    return_msg["status"] = all_log
+    return_msg["output"] = pf_result.to_dict(orient='records')
+    print(return_msg)
+
+    histoqc_results_fd.close()
+
+def main(args):
+    if args.slide.strip()=="":
+        process_manifest_file(args)
+    else:
+        process_single_slide(args)
+
+    sys.exit(0)
 
 if __name__ == "__main__": 
     args = parser.parse_args(sys.argv[1:]); 
