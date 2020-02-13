@@ -260,16 +260,24 @@ def process_single_slide(args):
            pt = pd.DataFrame([c_val],columns=c_result)
            pf_result = pf_result.append(pt,ignore_index=True)
 
-
     for idx, row in pf_result.iterrows():
         pf_result.at[idx,"file_uuid"],file_ext = os.path.splitext(str(row["filename"]));
 
+    one_row = pd.DataFrame(columns=pf_result.columns)
+    for idx, row in pf_result.iterrows():
+        one_row.loc[0] = pf_result.loc[idx] 
+        file_uuid = pf_result.at[idx,"file_uuid"] 
+        out_metadata_fd = open(out_folder+"/"+file_uuid+"_"+out_manifest_fname,mode="w")
+        one_row.to_csv(out_metadata_fd,index=False)
+        out_metadata_fd.close()
 
     return_msg["status"] = json.dumps(all_log)
     return_msg["output"] = json.dumps(pf_result.to_dict(orient='records'))
     print(return_msg)
 
     histoqc_results_fd.close()
+
+    return 0
 
 def main(args):
     if args.slide.strip()=="":
