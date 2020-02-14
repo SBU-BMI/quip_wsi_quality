@@ -15,9 +15,10 @@ RUN pip install --upgrade pip && \
 WORKDIR /opt/HistoQC/
 ENV  PATH=.:/opt/HistoQC:$PATH
 COPY quip_* /opt/HistoQC/ 
-COPY run_*  /opt/HistoQC/ 
-RUN  chmod 0755 run_slide_quality run_histoqc_update.sh && \
+COPY run_* /opt/HistoQC/ 
+COPY slide_*  /opt/HistoQC/ 
+RUN  chmod 0755 slide_check_quality run_histoqc_update.sh && \
 	 run_histoqc_update.sh 
 
-CMD ["run_slide_quality"]
+CMD ["slide_check_quality"]
 
