@@ -1,4 +1,4 @@
-FROM python:3.6.9-slim
+FROM python:3.7.5-slim
 MAINTAINER "SBU BMI"
 
 RUN apt-get update && \
@@ -6,7 +6,8 @@ RUN apt-get update && \
 
 WORKDIR /opt
 
-RUN git clone https://github.com/choosehappy/HistoQC.git && \
+RUN pip install --upgrade pip && \
+	git clone https://github.com/choosehappy/HistoQC.git && \
     cd HistoQC && \
     pip3 install -r requirements.txt && \
 	pip3 install pandas
@@ -15,8 +16,8 @@ WORKDIR /opt/HistoQC/
 ENV  PATH=.:/opt/HistoQC:$PATH
 COPY quip_* /opt/HistoQC/ 
 COPY run_*  /opt/HistoQC/ 
-RUN  chmod 0755 run_quip_quality run_histoqc_update.sh && \
+RUN  chmod 0755 run_slide_quality run_histoqc_update.sh && \
 	 run_histoqc_update.sh 
 
-CMD ["run_quip_quality"]
+CMD ["run_slide_quality"]
 

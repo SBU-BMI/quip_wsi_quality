@@ -1,0 +1,4 @@
+#!/bin/sh 
+
+python quip_wsi_quality.py "$@"
+
